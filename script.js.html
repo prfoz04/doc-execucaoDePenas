@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: script.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+        <link rel="icon" type="image/x-icon" href="styles/icone.ico">
+
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: script.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>        /**
+         * carrega os dados e gráficos ao abrir o site
+         */ 
+        document.addEventListener("DOMContentLoaded",async () => {
+            let dados = await buscarDadosConsulta();
+            let extras = await buscarDadosExecucoes();
+            extras = extras['EXECUÇÃO'];
+            console.log(dados);
+            console.log(extras);
+            inserirTitulo('Execução de penas');
+            constroiGraficos(dados)
+            let tituloExtras = Object.keys(extras)[0];
+            inserirTitulo(tituloExtras);
+            for (let key in extras[tituloExtras]) {
+                if (key === 'tipoGrafico') 
+                    continue;
+                dadosUnitarios(key, extras[tituloExtras][key]);
+            }
+            document.getElementById('loadDiv').remove();
+            document.getElementById('principal').style.display = 'flex';
+        });
+
+        //inicializando plugin para mostrar porcentagens
+        Chart.register(ChartDataLabels);
+
+        const cores = [
+            'rgb(153, 102, 255)', 
+            'rgb(75, 192, 192)', 
+            'rgb(255, 206, 86)', 
+            'rgb(255, 99, 132)', 
+            'rgb(54, 162, 235)', 
+            'rgb(255, 159, 64)', 
+            'rgb(26, 188, 156)', 
+            'rgb(41, 128, 185)', 
+            'rgb(231, 76, 60)', 
+            'rgb(149, 165, 166)'
+        ]
+
+        /**
+         * busca o objeto json na API do google apps script, planilha consulta 3.0 
+         */
+        async function buscarDadosConsulta() {
+            const url = 'https://script.google.com/macros/s/AKfycbxH4GeMfR5z0deOlwgFOpvlEY9LLKAzj921hYuEOgM4pt-oc7ce5sviMQxhqnzMP914/exec?analiseDados=true';
+            return await fetch(url).then(response => {
+                if (!response)
+                    throw new Error('Falha na requisição');
+                return response.json();
+            })
+        }
+
+        /**
+         * busca o objeto json na API do google apps script, planilha processos 4 vara
+         */
+        async function buscarDadosExecucoes() {
+            const url = "https://script.google.com/macros/s/AKfycbyH1MdsKxxju15K0XnIyTgOSUA_sIYOaVUQqI9dE8HJczOqR97HF2ne7OS3tcjM-aWd/exec?execucaoDePenas=true"
+            return await fetch(url).then(response => {
+                if (!response)
+                    throw new Error('Falha na requisição');
+                return response.json();
+            })
+        }
+        
+        /**
+         * insere u, elemento h1 wue é o título de cada categoria
+         * @param {string} titulo 
+         */
+        function inserirTitulo(titulo) {
+            let div = document.getElementById('dash');
+            let title = document.createElement('div');
+            title.className = 'titulo-linha';
+            title.innerHTML = `&lt;h1>${titulo}&lt;/h1>`;
+            div.appendChild(title);
+        }
+
+        /**
+         * insere um cartão com dados unitários
+         * @param {string} titulo 
+         * @param {string} dado 
+         */
+        function dadosUnitarios(titulo, dado) {
+            let cartao = document.createElement('div');
+            cartao.className = 'cartaoUnico';
+
+            let header = document.createElement('div');
+            header.className = 'header';
+            header.innerHTML = `&lt;span class="titulo">${titulo}&lt;/span>`
+            cartao.appendChild(header);
+
+            let corpo = document.createElement('div');
+            corpo.className = 'body';
+            corpo.innerHTML = `&lt;h3 class="valor">${dado}&lt;/h3>`
+            cartao.appendChild(corpo);
+
+            document.getElementById('dash').appendChild(cartao);
+        }
+
+        /**
+         * formata os dados para a função de geração de gráficos
+         * @param {object} dados json recebido via API
+         * @param {string} planilha deve ser 'PSC' ou 'PP'
+         * @param {string} categoria deve ser uma chave secundária do objeto json
+         * @param {string} filtro filtro opcional
+         */
+        function filtraDados(dados, planilha, categoria, filtro) {
+            let retorno = {};
+            retorno['labels'] = Object.keys(dados[planilha][categoria]);
+            if (filtro)
+                retorno['labels'] = retorno['labels'].filter(filtro);
+            retorno['dados'] = [];
+            for (let key of retorno['labels'])
+                retorno['dados'].push(dados[planilha][categoria][key]);  
+            retorno['labels'] = retorno['labels'].map(str => str.replace(/_/g, " "));
+            let indexEANPP = retorno['labels'].indexOf('CP - EANPP');
+            if (indexEANPP !== -1) {
+                let indexCP = retorno['labels'].indexOf('CP');
+                retorno['dados'][indexCP] += retorno['dados'][indexEANPP];
+                retorno['dados'].splice(indexEANPP, 1);
+                retorno['labels'].splice(indexEANPP, 1);
+            }
+            return retorno
+        }
+
+        /**
+         * soma os valores em cada chave do objeto
+         * @param {object} obj 
+         * @returns {number}
+         */
+        function somatorioObjeto(obj) {
+            let soma = 0;
+            for (let chave in obj) {
+                soma += obj[chave];
+            }
+            return soma;
+        }
+
+        /**
+         * insere as legendas formatadas logo abaixo do gráfico
+         * @param {string} nomeGrafico 
+         * @param {string[]} labels 
+         */
+        function inserirLegendas(nomeGrafico, labels) {
+            let div = document.getElementById(`legenda${nomeGrafico}`);
+            for (let str of labels) {
+                div.innerHTML += `
+                &lt;div style="display: flex; flex-direction: row; height: 15px; margin-bottom: 5px; align-items: center;">
+                    &lt;div style="background-color: ${cores[labels.indexOf(str)]};" class="indiceCor">&lt;/div>
+                    &lt;span>&lt;b>${str}&lt;/span>
+                &lt;/div>`
+            }
+        }
+
+        /**
+         * insere o somatório dos dados ao lado do gráfico
+         * @param {string} nomeGrafico 
+         * @param {number[]} dados 
+         */
+        function inserirTotal(nomeGrafico, dados) {
+            let div = document.getElementById(`total${nomeGrafico}`);
+            let soma = 0;
+            for (let i of dados) 
+                soma += i;
+            div.innerHTML = `&lt;h3>${soma}&lt;/h3>`;
+        }
+
+        /**
+         * constrói as divs e os gráficos um a um
+         * @param {object} dados json recebidos via API
+         */
+        function constroiGraficos(dados) {
+            let data;
+            let nomeGrafico;
+
+            //apenas para reaproveitar a função
+            let dadosPP = { PP: dados }
+
+            nomeGrafico = 'PSC - Tipos de processo';
+            gerarDivGrafico('PSC', nomeGrafico);
+            data = filtraDados(dados, 'PSC', 'Tipos_de_processo');
+            geradorGraficos(nomeGrafico, data.labels, data.dados, 'Processos', 'pie') 
+
+            nomeGrafico = 'PP - Tipos de processo';
+            gerarDivGrafico('PSC', nomeGrafico);
+            data = filtraDados(dadosPP, 'PP', 'PP', key => (key.includes('CP') || key.includes('EP') || key.includes('EANPP')));
+            geradorGraficos(nomeGrafico, data.labels, data.dados, 'Processos', 'pie');
+
+            nomeGrafico = 'PSC - Preenchimento de vagas';
+            gerarDivGrafico('PSC', nomeGrafico)
+            data = filtraDados(dados, 'PSC', 'Preenchimento_de_vagas', key => !key.includes('CP'));
+            geradorGraficos(nomeGrafico, data.labels, data.dados, 'Processos', 'pie');
+
+            nomeGrafico = 'PSC - Entidades por cidade';
+            gerarDivGrafico('PSC', nomeGrafico)
+            data = filtraDados(dados, 'PSC', 'Entidades_por_região');
+            geradorGraficos(nomeGrafico, data.labels, data.dados, 'Entidades', 'pie');
+        }
+
+        /**
+         * gera a div o titulo e o elemento canvas onde fica o gafico
+         * @param {string} tipo PSC ou PP 
+         * @param {string} nomeGrafico
+         */
+        function gerarDivGrafico(tipo, nomeGrafico) {
+            let div = document.createElement('div');
+            div.className = 'cartao';
+
+            let titulo = document.createElement('h3');
+            titulo.innerHTML = nomeGrafico;
+
+            let total = document.createElement('div');
+            total.id = `total${nomeGrafico}`;
+            total.className = 'total';
+
+            let canva = document.createElement('canvas');
+            canva.id = nomeGrafico;
+
+            let container = document.createElement('div');
+            container.id = 'container';
+            container.appendChild(total);
+            container.appendChild(canva);
+
+            let legendas = document.createElement('div');
+            legendas.className = 'legendas';
+            legendas.id = `legenda${nomeGrafico}`;
+
+            div.appendChild(titulo);
+            div.appendChild(container);
+            div.appendChild(legendas);
+            document.getElementById('dash').appendChild(div);
+        }
+
+        /**
+         * utiliza a biblioteca chart para gerar um grafico baseado nos parametros 
+         * @param {string} id titulo do grafico
+         * @param {string[]} colunas vetor de strings com os nomes de cada coluna ou setor
+         * @param {number[]} dados dados associados a cada label 
+         * @param {string} medida unidade de medida utilizada
+         * @param {string} tipo gráfico de barras = 'bar', gráfico de setores = 'pie'
+         */
+        function geradorGraficos(id, colunas, dados, medida, tipo) {
+            const ctx = document.getElementById(id).getContext('2d');
+            new Chart(ctx, {
+                type: tipo,
+                data: {
+                    labels: colunas,
+                    datasets: [{
+                        label: medida,
+                        data: dados,
+                        backgroundColor: cores, 
+                        borderColor: 'grey',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        datalabels: {
+                            color: '#333333', // Cor do texto dentro do setor
+                            font: {
+                                weight: 'bold',
+                                size: 14
+                            },
+                            // Função para calcular e exibir a porcentagem
+                            formatter: (value, ctx) => {
+                                let soma = 0;
+                                let dataArr = ctx.chart.data.datasets[0].data;
+                                dataArr.map(data => {
+                                    soma += data;
+                                });
+                                let percentage = (value * 100 / soma).toFixed(0) + "%";
+                                if ((value * 100) / soma &lt; 7)
+                                    return '';
+                                return percentage;
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks : {
+                                display: false
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            })
+            inserirLegendas(id, colunas);
+            inserirTotal(id, dados);
+        }
+
+        /**
+         * coloca a entrada no formato #.###,##
+         * @param {string} string
+         */
+        function formataMoeda(string) {
+            let valor = string.toString();
+            valor = valor.substring(0, valor.indexOf('.') + 3).replace('.', ',')
+            valor = valor.split("").reverse()
+            let retorno =  '';
+            retorno += valor[0] + valor[1] + valor[2];
+            for (let i = 3, j = 0; i &lt; valor.length; i++, j++) {
+                if (j % 3 == 0 &amp;&amp; j != 0)
+                    retorno += '.';
+                retorno += valor[i];
+            }
+            return retorno.split("").reverse().join("");
+        }</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#buscarDadosConsulta">buscarDadosConsulta</a></li><li><a href="global.html#buscarDadosExecucoes">buscarDadosExecucoes</a></li><li><a href="global.html#constroiGraficos">constroiGraficos</a></li><li><a href="global.html#dadosUnitarios">dadosUnitarios</a></li><li><a href="global.html#filtraDados">filtraDados</a></li><li><a href="global.html#formataMoeda">formataMoeda</a></li><li><a href="global.html#geradorGraficos">geradorGraficos</a></li><li><a href="global.html#gerarDivGrafico">gerarDivGrafico</a></li><li><a href="global.html#inserirLegendas">inserirLegendas</a></li><li><a href="global.html#inserirTitulo">inserirTitulo</a></li><li><a href="global.html#inserirTotal">inserirTotal</a></li><li><a href="global.html#somatorioObjeto">somatorioObjeto</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Thu Jul 16 2026 14:47:47 GMT-0300 (Horário Padrão de Brasília)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
